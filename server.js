@@ -26,21 +26,30 @@ app.use(express.json());
 let serialPort = null;
 let intervalId = null;
 let CurrStatus = 0;
-let currentLat = null;
-let currentLon = null;
-let pvtLat = null;
-let pvtLon = null;
+let clientPos = null;
+let pvtCentrePos = null;
 let pvtRad = null;
 let skConn = [];
+let simuSpeed = null;
+let simuPos = null;
 
 io.on('connection', (socket) => {
   skConn.push(socket);
   console.log('socket connection');
-});
 
-io.on('disconnect', (socket) => {
-  skConn = skConn.filter(s => s !== socket);
-  console.log('socket disconnect');
+  socket.on('do', (data) => {
+    if (data.autopilot != null) {
+      console.log('autopilot: %d', data.autopilot);
+    }
+    else if (data.speed != null) {
+      console.log('set speed to %d', data.speed);
+    }
+  });
+
+  io.on('disconnect', (socket) => {
+    skConn = skConn.filter(s => s !== socket);
+    console.log('socket disconnect');
+  });
 });
 
 function sendToSockets(event, data) {
@@ -67,9 +76,10 @@ app.get('/api/status', async (req, res) => {
   try {
     res.json({
       status : CurrStatus,
-      coords : [currentLat, currentLon],
-      pivotCenter : [pvtLat, pvtLon],
-      pivotRadius : pvtRad
+      coords : clientPos,
+      pivotCenter : pvtCentrePos,
+      pivotRadius : pvtRad,
+      speed: simuSpeed
     });
   } catch (err) {
     console.error('Fail to send status:', err);
@@ -106,9 +116,8 @@ app.post('/api/open-port', (req, res) => {
 });
 
 app.post('/api/start-sending', (req, res) => {
-  const { lat, lon } = req.body;
-  currentLat = lat;
-  currentLon = lon;
+  const { currentPos } = req.body;
+  clientPos = currentPos;
 
   if (!serialPort || !serialPort.isOpen) {
     return res.status(400).json({ error: 'Serial port not open' });
@@ -116,31 +125,36 @@ app.post('/api/start-sending', (req, res) => {
   CurrStatus = 2;
   clearInterval(intervalId);
   intervalId = setInterval(() => {
-    if (currentLat !== null && currentLon !== null) {
-      const gga = generateGGA(currentLat, currentLon);
+    if (clientPos) {
+      const gga = generateGGA(clientPos[0], clientPos[1]);
       serialPort.write(gga + '\r\n');
       console.log('Sent:', gga);
-      sendToSockets('gpsData', { lat: currentLat, lon: currentLon, gga });
+      sendToSockets('gpsData', { servPos: clientPos});
     }
   }, 1000);
   res.json({ started: true });
 });
 
 app.post('/api/update-coordinates', (req, res) => {
-  const { lat, lon } = req.body;
-  currentLat = lat;
-  currentLon = lon;
-  res.json({ updated: true });
+  const { currentPos } = req.body;
+  if (currentPos) {
+    clientPos = currentPos;
+    res.json({ updated: true });
+  }
+  else {
+    res.json({ updated: false });
+  }
+    
 });
 
 app.post('/api/update-pivot', (req, res) => {
-  const { lat, lon, rad } = req.body;
-  if (lat && lon && rad) {
-    pvtLat = lat;
-    pvtLon = lon;
+  const { center, rad, speed } = req.body;
+  if (center && rad && speed) {
+    pvtCentrePos = center;
     pvtRad = rad;
+    simuSpeed = speed;
     res.json({pvtUpdate: true});
-    console.log('Set pivot of %d at %f, %f', pvtRad, pvtLat.toFixed(6), pvtLon.toFixed(6));
+    console.log('Set pivot of %d at [%f, %f]', pvtRad, pvtCentrePos[0].toFixed(6), pvtCentrePos[1].toFixed(6));
   }
   else {
     res.json({pvtUpdate: false});
@@ -169,10 +183,6 @@ app.post('/api/close-port', (req, res) => {
   }
 });
 
-
-
-
-// httpSvr.listen(WSPORT);
 httpSvr.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });

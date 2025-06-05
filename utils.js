@@ -22,6 +22,22 @@ export function pointOnCircle(center, radiusMeters, angleDegrees) {
   ];
 }
 
+export function angleFromNorth(center, point) {
+  const [lat1, lon1] = center.map(deg => deg * Math.PI / 180);
+  const [lat2, lon2] = point.map(deg => deg * Math.PI / 180);
+
+  const dLon = lon2 - lon1;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  let angleRad = Math.atan2(y, x);
+  let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+
+  return angleDeg;
+}
+
 export function generateGGA(lat, lon) {
   const now = new Date();
   const time = now.toISOString().substr(11, 8).replace(/:/g, '');

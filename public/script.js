@@ -85,6 +85,7 @@ fetch('api/status', { method: 'GET' })
         refreshPivot();
         document.getElementById('center-coords').value = `${pivotCenter[0].toFixed(6)}, ${pivotCenter[1].toFixed(6)}`;
         document.getElementById('pivot-radius').value = pvtRadius;
+        document.getElementById('speed').value = data.speed;
     }
     remoteStatus = data.status;
     refreshButtons();
@@ -107,7 +108,7 @@ map.on('click', function (e) {
         fetch('/api/update-coordinates', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: selectedCoords[0], lon: selectedCoords[1] }),
+            body: JSON.stringify({ currentPos: selectedCoords }),
         });
     }
 });
@@ -151,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetch('/api/start-sending', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat: selectedCoords[0], lon: selectedCoords[1] })
+      body: JSON.stringify({ currentPos: selectedCoords })
     });
     const data = await res.json();
     if (data.started)
@@ -184,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('set-center').addEventListener('click', async() => {
     const rad = Number(document.getElementById('pivot-radius').value);
     const stringCoords = document.getElementById('center-coords').value;
+    const initSpeed = Number(document.getElementById('speed').value);
     if (stringCoords)
     {
         const parts = stringCoords.split(',');
@@ -203,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/update-pivot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: pivotCenter[0], lon: pivotCenter[1], rad: pvtRadius})
+            body: JSON.stringify({ center: pivotCenter, rad: pvtRadius, speed: initSpeed})
         });
         const data = await res.json();
         if (data.pvtUpdate == false)
@@ -233,4 +235,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
   });
+
+  document.getElementById('autopilot').addEventListener('change', async() => {
+    if (remoteStatus == 2) {
+      if (document.getElementById('autopilot').checked) {
+        console.log('Autopilot ON');
+        socket.emit('do', {autopilot: true});
+      }
+      else {
+        console.log('Autopilot OFF');
+        socket.emit('do', {autopilot: false});
+      }
+    }
+    else {
+      console.log('Autopilot unavailable');
+    }
+  });
+
+   document.getElementById('speed').addEventListener('change', async() => {
+    if (remoteStatus == 2)
+    {
+      const sendSpeed = Number(document.getElementById('speed').value);
+      socket.emit('do', {speed: sendSpeed});
+      console.log('set speed to %d °/min', sendSpeed);
+    }
+   });
+
 });
