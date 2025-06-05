@@ -1,13 +1,12 @@
 let selectedCoords = [45.645851, 5.866758];
-let pivotCenter = [null, null];
-let marker = null;
-let circleLayer = null;
-let arcLayer = null;
+let pvtCoords = [null, null];
+let mrkUser = null;
+let mrkServer = null;
 let remoteStatus = 0;
 
 const map = L.map('map').setView(selectedCoords, 13);
-let pvtMark = null;
-let pvtDraw = null;
+let mrkPvtCentre = null;
+let mrkPvtZone = null;
 let pvtRadius = null;
 let svrAutoPilot = 0;
 
@@ -15,7 +14,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-const socket = io('ws://localhost:65080');
+const socket = io();
 
 function refreshButtons() {
   switch(remoteStatus)
@@ -43,16 +42,16 @@ function refreshButtons() {
 
 function refreshPivot() {
     if (map) {
-        if (pvtMark && pvtDraw && map.hasLayer(pvtMark) && map.hasLayer(pvtDraw)) {
-            pvtMark.setLatLng(pivotCenter);
-            pvtDraw.setLatLng(pivotCenter);
-            pvtDraw.setRadius(pvtRadius);
+        if (mrkPvtCentre && mrkPvtZone && map.hasLayer(mrkPvtCentre) && map.hasLayer(mrkPvtZone)) {
+            mrkPvtCentre.setLatLng(pvtCoords);
+            mrkPvtZone.setLatLng(pvtCoords);
+            mrkPvtZone.setRadius(pvtRadius);
         }
         else {
-            pvtMark = L.circleMarker(pivotCenter, {
+            mrkPvtCentre = L.circle(pvtCoords, {
               radius: 1,
               color: 'red'}).addTo(map);
-            pvtDraw = L.circle(pivotCenter, {
+            mrkPvtZone = L.circle(pvtCoords, {
               radius: pvtRadius,
               color:'#00aeff',
               title:'Pivot center'}).addTo(map);
@@ -70,9 +69,8 @@ fetch('api/status', { method: 'GET' })
     && (data.coords[1] !== null)) {
       selectedCoords = data.coords;
       map.setView(selectedCoords, 20);
-      marker = L.marker(selectedCoords).addTo(map);
-      document.getElementById('coords').innerText =
-        `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
+      mrkUser = L.marker(selectedCoords).addTo(map);
+      document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
     }
     if (data.pivotCenter
     && Array.isArray(data.pivotCenter)
@@ -81,33 +79,44 @@ fetch('api/status', { method: 'GET' })
     && (data.pivotCenter[1] !== null)
     && (data.pivotRadius != null)) {
         pvtRadius = data.pivotRadius;
-        pivotCenter = data.pivotCenter;
+        pvtCoords = data.pivotCenter;
         refreshPivot();
-        document.getElementById('center-coords').value = `${pivotCenter[0].toFixed(6)}, ${pivotCenter[1].toFixed(6)}`;
+        document.getElementById('center-coords').value = `${pvtCoords[0].toFixed(6)}, ${pvtCoords[1].toFixed(6)}`;
         document.getElementById('pivot-radius').value = pvtRadius;
+        document.getElementById('speed').value = data.speed;
     }
     remoteStatus = data.status;
     refreshButtons();
   });
 
-socket.on('data', (msg) => console.log('Received:', msg));
+socket.on('gpsData', (msg) => {
+  console.log('Received: position[%f, %f]', msg.servPos[0], msg.servPos[1])
+  if (mrkServer) {
+    mrkServer.setLatLng(msg.servPos);
+  }
+  else {
+    mrkServer = L.circle(msg.servPos, {
+              radius: 5,
+              color: 'red'}).addTo(map);
+  }
+});
 
 map.on('click', function (e) {
     if (svrAutoPilot == 0)
     {
         selectedCoords = [e.latlng.lat, e.latlng.lng];
-        if (marker) {
-          marker.setLatLng(e.latlng);
+        if (mrkUser) {
+          mrkUser.setLatLng(e.latlng);
         }
         else {
-          marker = L.marker(e.latlng).addTo(map);
+          mrkUser = L.marker(e.latlng).addTo(map);
         }
         document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
 
         fetch('/api/update-coordinates', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: selectedCoords[0], lon: selectedCoords[1] }),
+            body: JSON.stringify({ currentPos: selectedCoords }),
         });
     }
 });
@@ -151,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetch('/api/start-sending', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat: selectedCoords[0], lon: selectedCoords[1] })
+      body: JSON.stringify({ currentPos: selectedCoords })
     });
     const data = await res.json();
     if (data.started)
@@ -184,16 +193,17 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('set-center').addEventListener('click', async() => {
     const rad = Number(document.getElementById('pivot-radius').value);
     const stringCoords = document.getElementById('center-coords').value;
+    const initSpeed = Number(document.getElementById('speed').value);
     if (stringCoords)
     {
         const parts = stringCoords.split(',');
-        pivotCenter[0] = parseFloat(parts[0].trim());
-        pivotCenter[1] = parseFloat(parts[1].trim());
+        pvtCoords[0] = parseFloat(parts[0].trim());
+        pvtCoords[1] = parseFloat(parts[1].trim());
     }
     else
     {
-        pivotCenter[0] = selectedCoords[0];
-        pivotCenter[1] = selectedCoords[1];
+        pvtCoords[0] = selectedCoords[0];
+        pvtCoords[1] = selectedCoords[1];
         document.getElementById('center-coords').value = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
     }
     if (rad)
@@ -203,7 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await fetch('/api/update-pivot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: pivotCenter[0], lon: pivotCenter[1], rad: pvtRadius})
+            body: JSON.stringify({ center: pvtCoords, rad: pvtRadius, speed: initSpeed})
         });
         const data = await res.json();
         if (data.pvtUpdate == false)
@@ -214,17 +224,17 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('remove').addEventListener('click', async() => {
-    if (map && pvtMark && pvtDraw && map.hasLayer(pvtMark) && map.hasLayer(pvtDraw)) {
-        pvtMark.remove();
-        pvtDraw.remove();
-        pivotCenter = [null, null];
+    if (map && mrkPvtCentre && mrkPvtZone && map.hasLayer(mrkPvtCentre) && map.hasLayer(mrkPvtZone)) {
+        mrkPvtCentre.remove();
+        mrkPvtZone.remove();
+        pvtCoords = [null, null];
         pvtRadius = null;
-        console.log('Pivot markers removed');
+        console.log('Pivot marker removed');
         document.getElementById('center-coords').value = ``;
          const res = await fetch('/api/update-pivot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: pivotCenter[0], lon: pivotCenter[1], rad: pvtRadius})
+            body: JSON.stringify({ center: pvtCoords, rad: pvtRadius, speed: 1})
         });
         const data = await res.json();
         if (data.pvtUpdate == false)
@@ -233,4 +243,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
   });
+
+  document.getElementById('autopilot').addEventListener('change', async() => {
+    if (remoteStatus == 2) {
+      if (document.getElementById('autopilot').checked) {
+        console.log('Autopilot ON');
+        socket.emit('do', {autopilot: true});
+      }
+      else {
+        console.log('Autopilot OFF');
+        socket.emit('do', {autopilot: false});
+      }
+    }
+    else {
+      console.log('Autopilot unavailable');
+    }
+  });
+
+   document.getElementById('speed').addEventListener('change', async() => {
+    if (remoteStatus == 2)
+    {
+      const sendSpeed = Number(document.getElementById('speed').value);
+      socket.emit('do', {speed: sendSpeed});
+      console.log('set speed to %d °/min', sendSpeed);
+    }
+   });
+
 });

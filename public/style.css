@@ -79,7 +79,7 @@ button:disabled {
   width: 50px;
 }
 
-#set-angle {
+#speed {
   width: 50px;
 }
 
@@ -88,7 +88,8 @@ button:disabled {
 }
 
 .switch {
-  position: absolute;
+  position: relative;
+  vertical-align: middle;
   display: inline-block;
   width: 44px;
   height: 20px;
