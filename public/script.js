@@ -1,5 +1,6 @@
 let selectedCoords = [45.645851, 5.866758];
 let pvtCoords = [null, null];
+let svrCoords = [null, null];
 let mrkUser = null;
 let mrkServer = null;
 let remoteStatus = 0;
@@ -8,7 +9,9 @@ const map = L.map('map').setView(selectedCoords, 13);
 let mrkPvtCentre = null;
 let mrkPvtZone = null;
 let pvtRadius = null;
-let svrAutoPilot = 0;
+let pvtAngle = 0;
+let flagAutopilot = null;
+let pvtBar = null
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
@@ -41,84 +44,89 @@ function refreshButtons() {
 }
 
 function refreshPivot() {
-    if (map) {
-        if (mrkPvtCentre && mrkPvtZone && map.hasLayer(mrkPvtCentre) && map.hasLayer(mrkPvtZone)) {
-            mrkPvtCentre.setLatLng(pvtCoords);
-            mrkPvtZone.setLatLng(pvtCoords);
-            mrkPvtZone.setRadius(pvtRadius);
-        }
-        else {
-            mrkPvtCentre = L.circle(pvtCoords, {
-              radius: 1,
-              color: 'red'}).addTo(map);
-            mrkPvtZone = L.circle(pvtCoords, {
-              radius: pvtRadius,
-              color:'#00aeff',
-              title:'Pivot center'}).addTo(map);
-        }
+  if (map) {
+    if (mrkPvtCentre && mrkPvtZone && map.hasLayer(mrkPvtCentre) && map.hasLayer(mrkPvtZone)) {
+      mrkPvtCentre.setLatLng(pvtCoords);
+      mrkPvtZone.setLatLng(pvtCoords);
+      mrkPvtZone.setRadius(pvtRadius);
     }
+    else {
+      mrkPvtCentre = L.circle(pvtCoords, {
+        radius: 2,
+        color: 'red'}).addTo(map);
+      mrkPvtZone = L.circle(pvtCoords, {
+        radius: pvtRadius,
+        color:'#00aeff',
+        title:'Pivot center'}).addTo(map);
+    }
+  }
+}
+
+function updateAngleDisplay(toSetAngle) {
+  document.getElementById('angle').innerText = `Angle: ${toSetAngle.toFixed(1)}°`;
 }
 
 fetch('api/status', { method: 'GET' })
   .then(res => res.json())
   .then(data => {
-    if (data.coords
-    && Array.isArray(data.coords)
-    && (data.coords.length === 2)
-    && (data.coords[0] !== null)
-    && (data.coords[1] !== null)) {
+    if (data.coords) {
       selectedCoords = data.coords;
       map.setView(selectedCoords, 20);
       mrkUser = L.marker(selectedCoords).addTo(map);
       document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
     }
-    if (data.pivotCenter
-    && Array.isArray(data.pivotCenter)
-    && (data.pivotCenter.length === 2)
-    && (data.pivotCenter[0] !== null)
-    && (data.pivotCenter[1] !== null)
-    && (data.pivotRadius != null)) {
+    if (data.pivotCenter && data.pivotRadius) {
         pvtRadius = data.pivotRadius;
         pvtCoords = data.pivotCenter;
         refreshPivot();
         document.getElementById('center-coords').value = `${pvtCoords[0].toFixed(6)}, ${pvtCoords[1].toFixed(6)}`;
         document.getElementById('pivot-radius').value = pvtRadius;
-        document.getElementById('speed').value = data.speed;
+        
     }
+    flagAutopilot = data.autopilot;
+    document.getElementById('speed').value = data.speed;
+    document.getElementById('autopilot').checked = flagAutopilot;
     remoteStatus = data.status;
     refreshButtons();
   });
 
+function updateServerMarker() {
+  if (flagAutopilot) {
+    if (pvtBar) {
+      pvtBar.setLatLngs([pvtCoords, svrCoords]);
+    } else {
+      pvtBar = L.polyline([pvtCoords, svrCoords], { color: 'red', weight: 3 }).addTo(map);
+    }
+  } else {
+    if (mrkServer) {
+      mrkServer.setLatLng(svrCoords);
+    } else {
+      mrkServer = L.circle(svrCoords, { radius: 5, color: 'red' }).addTo(map);
+    }
+  }
+}
+
 socket.on('gpsData', (msg) => {
   console.log('Received: position[%f, %f]', msg.servPos[0], msg.servPos[1])
-  if (mrkServer) {
-    mrkServer.setLatLng(msg.servPos);
-  }
-  else {
-    mrkServer = L.circle(msg.servPos, {
-              radius: 5,
-              color: 'red'}).addTo(map);
-  }
+  svrCoords = msg.servPos;
+  pvtAngle = msg.angle;
+  updateServerMarker();
 });
 
 map.on('click', function (e) {
-    if (svrAutoPilot == 0)
-    {
-        selectedCoords = [e.latlng.lat, e.latlng.lng];
-        if (mrkUser) {
-          mrkUser.setLatLng(e.latlng);
-        }
-        else {
-          mrkUser = L.marker(e.latlng).addTo(map);
-        }
-        document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
-
-        fetch('/api/update-coordinates', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ currentPos: selectedCoords }),
-        });
-    }
+  selectedCoords = [e.latlng.lat, e.latlng.lng];
+  if (mrkUser) {
+    mrkUser.setLatLng(e.latlng);
+  }
+  else {
+    mrkUser = L.marker(e.latlng).addTo(map);
+  }
+  document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
+  fetch('/api/update-coordinates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPos: selectedCoords }),
+  });
 });
 
 async function loadPorts() {
@@ -137,6 +145,7 @@ async function loadPorts() {
 document.addEventListener('DOMContentLoaded', () => {
   loadPorts();
   refreshButtons();
+  
   document.getElementById('openPort').addEventListener('click', async () => {
     const port = document.getElementById('ports').value;
     const baud = document.getElementById('baud').value;
@@ -149,11 +158,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const data = await res.json();
     if (data.success) {
-      alert('Port opened successfully');
       remoteStatus = 1;
       refreshButtons();
-    } else 
-    { alert('Failed to open port'); }
+    }
   });
 
   document.getElementById('startSending').addEventListener('click', async () => {
@@ -202,8 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     else
     {
-        pvtCoords[0] = selectedCoords[0];
-        pvtCoords[1] = selectedCoords[1];
+        pvtCoords = selectedCoords;
         document.getElementById('center-coords').value = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
     }
     if (rad)
@@ -249,10 +255,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (document.getElementById('autopilot').checked) {
         console.log('Autopilot ON');
         socket.emit('do', {autopilot: true});
+        flagAutopilot = true;
+        if (map.hasLayer(mrkServer)) {
+          mrkServer.remove();
+          mrkServer = null;
+        }
       }
       else {
         console.log('Autopilot OFF');
         socket.emit('do', {autopilot: false});
+        flagAutopilot = false;
+        if (map.hasLayer(pvtBar)) {
+          map.removeLayer(pvtBar);
+          pvtBar = null;
+        }
       }
     }
     else {
