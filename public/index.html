@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NMEA GPS frame emulator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h2>NMEA GPS frame emulator</h2>
+  <div id="map"></div>
+  <div id="coords">Click the map to select GPS coordinates.</div>
+
+  <div id="controls">
+    <div class="left">
+      <h3>Serial Port Configuration</h3>
+      <label for="ports">COM Port:</label>
+      <select id="ports"></select>
+
+      <label for="baud">Baud Rate:</label>
+      <input type="number" id="baud" value="9600" />
+
+      <button id="openPort">Open Port</button>
+      <button id="startSending">Start Sending</button>
+      <button id="freeze">Freeze GPS</button>
+      <button id="stopSending">Stop</button>
+      <button id="closePort">Close Port</button>
+  </div>
+    <div class="left">
+      <h3>Pivot simulation</h3>
+      <label for="Center">Pivot center</label><input type="text" id="center-coords" />
+      <label for="Radius">Pivot radius</label><input type="number" id="pivot-radius" value="100"/>
+      <button id="set-center">Set</button>
+      <button id="remove">Remove</button>
+      <label for="set-angle">Set angle</label><input type="number" id="set-angle" value="0"/>
+      <label for="autopilot" class="switch">
+        <input type="checkbox" id="autopilot">
+        <span class="slider round"></span>
+      </label>
+
+    </div>
+  </div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
