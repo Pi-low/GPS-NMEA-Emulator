@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { SerialPort } from 'serialport';
 import { pointOnCircle } from './utils.js';
 import { generateGGA } from './utils.js';
+import { angleFromNorth } from './utils.js';
 import { createServer } from "http";
 import { Server } from 'socket.io';
 
@@ -30,8 +31,13 @@ let clientPos = null;
 let pvtCentrePos = null;
 let pvtRad = null;
 let skConn = [];
-let simuSpeed = null;
-let simuPos = null;
+let autoMode = 0;
+let simuSpeed = 0;
+
+let targetAngle = 0;
+let currAngle = 0;
+let progressRate = 1/60; //in ° per sec
+let sendPos = null;
 
 io.on('connection', (socket) => {
   skConn.push(socket);
@@ -40,9 +46,12 @@ io.on('connection', (socket) => {
   socket.on('do', (data) => {
     if (data.autopilot != null) {
       console.log('autopilot: %d', data.autopilot);
+      autoMode = data.autopilot;
     }
     else if (data.speed != null) {
       console.log('set speed to %d', data.speed);
+      progressRate = data.speed/60;
+      simuSpeed = data.speed;
     }
   });
 
@@ -56,9 +65,10 @@ function sendToSockets(event, data) {
   skConn.forEach(socket => {
     if (socket.connected) {
       socket.emit(event, data);
-    } else {
-      console.log('Socket not connected, skipping emit:', event);
     }
+    // else {
+    //   console.log('Socket not connected, skipping emit:', event);
+    // }
   });
 }
 
@@ -123,13 +133,29 @@ app.post('/api/start-sending', (req, res) => {
     return res.status(400).json({ error: 'Serial port not open' });
   }
   CurrStatus = 2;
+  if (pvtCentrePos) {
+    targetAngle = angleFromNorth(pvtCentrePos, clientPos);
+    console.log('target angle: %f°', targetAngle);
+  }
   clearInterval(intervalId);
   intervalId = setInterval(() => {
-    if (clientPos) {
-      const gga = generateGGA(clientPos[0], clientPos[1]);
+    if (autoMode) {
+      if (sendPos) {
+        currAngle = angleFromNorth(pvtCentrePos, sendPos);
+        if (targetAngle > currAngle)
+        { sendPos = pointOnCircle(pvtCentrePos, pvtRad, currAngle + progressRate); }
+        else if (targetAngle < currAngle)
+        { sendPos = pointOnCircle(pvtCentrePos, pvtRad, currAngle - progressRate); }
+      }
+    }
+    else {
+      sendPos = clientPos;
+    }
+    if (sendPos) {
+      const gga = generateGGA(sendPos[0], sendPos[1]);
       serialPort.write(gga + '\r\n');
       console.log('Sent:', gga);
-      sendToSockets('gpsData', { servPos: clientPos});
+      sendToSockets('gpsData', { servPos: sendPos});
     }
   }, 1000);
   res.json({ started: true });
@@ -140,6 +166,10 @@ app.post('/api/update-coordinates', (req, res) => {
   if (currentPos) {
     clientPos = currentPos;
     res.json({ updated: true });
+    if (pvtCentrePos) {
+      targetAngle = angleFromNorth(pvtCentrePos, clientPos);
+      console.log('target angle: %f°', targetAngle);
+    }
   }
   else {
     res.json({ updated: false });
