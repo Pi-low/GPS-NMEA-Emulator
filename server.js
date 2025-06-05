@@ -12,8 +12,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 8080;
-const WSPORT = 65080;
-const httpSvr = createServer();
+
+const httpSvr = createServer(app);
 const io = new Server(httpSvr, {
   cors: {
     origin: '*',
@@ -31,17 +31,27 @@ let currentLon = null;
 let pvtLat = null;
 let pvtLon = null;
 let pvtRad = null;
-let skConn = null;
+let skConn = [];
 
 io.on('connection', (socket) => {
-  skConn = socket.connected;
+  skConn.push(socket);
   console.log('socket connection');
 });
 
 io.on('disconnect', (socket) => {
-  skConn = socket.connected;
+  skConn = skConn.filter(s => s !== socket);
   console.log('socket disconnect');
 });
+
+function sendToSockets(event, data) {
+  skConn.forEach(socket => {
+    if (socket.connected) {
+      socket.emit(event, data);
+    } else {
+      console.log('Socket not connected, skipping emit:', event);
+    }
+  });
+}
 
 app.get('/api/ports', async (req, res) => {
   try {
@@ -110,6 +120,7 @@ app.post('/api/start-sending', (req, res) => {
       const gga = generateGGA(currentLat, currentLon);
       serialPort.write(gga + '\r\n');
       console.log('Sent:', gga);
+      sendToSockets('gpsData', { lat: currentLat, lon: currentLon, gga });
     }
   }, 1000);
   res.json({ started: true });
@@ -158,7 +169,10 @@ app.post('/api/close-port', (req, res) => {
   }
 });
 
-httpSvr.listen(WSPORT);
-app.listen(PORT, () => {
+
+
+
+// httpSvr.listen(WSPORT);
+httpSvr.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });

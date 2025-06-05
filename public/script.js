@@ -15,7 +15,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 
-const socket = io('ws://localhost:65080');
+const socket = io();
 
 function refreshButtons() {
   switch(remoteStatus)
@@ -90,7 +90,7 @@ fetch('api/status', { method: 'GET' })
     refreshButtons();
   });
 
-socket.on('data', (msg) => console.log('Received:', msg));
+socket.on('gpsData', (msg) => console.log('Received:', msg));
 
 map.on('click', function (e) {
     if (svrAutoPilot == 0)
