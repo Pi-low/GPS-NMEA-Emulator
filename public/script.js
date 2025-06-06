@@ -10,8 +10,12 @@ let mrkPvtCentre = null;
 let mrkPvtZone = null;
 let pvtRadius = null;
 let pvtAngle = 0;
-let flagAutopilot = null;
-let pvtBar = null
+let flagAutopilot = false;
+let pvtBar = null;
+let txtDisplay = document.getElementById('coords');
+let intervalId = null;
+let pvtTxtInfo = null;
+let curTxtInfo = null;
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
@@ -43,6 +47,22 @@ function refreshButtons() {
   }
 }
 
+function angleFromNorth(center, point) {
+  const [lat1, lon1] = center.map(deg => deg * Math.PI / 180);
+  const [lat2, lon2] = point.map(deg => deg * Math.PI / 180);
+
+  const dLon = lon2 - lon1;
+
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) -
+            Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+  let angleRad = Math.atan2(y, x);
+  let angleDeg = (angleRad * 180 / Math.PI + 360) % 360;
+
+  return angleDeg;
+}
+
 function refreshPivot() {
   if (map) {
     if (mrkPvtCentre && mrkPvtZone && map.hasLayer(mrkPvtCentre) && map.hasLayer(mrkPvtZone)) {
@@ -62,8 +82,11 @@ function refreshPivot() {
   }
 }
 
-function updateAngleDisplay(toSetAngle) {
-  document.getElementById('angle').innerText = `Angle: ${toSetAngle.toFixed(1)}°`;
+function updateAngleDisplay() {
+  if (map.hasLayer(mrkUser)) {
+    const targetAngle = angleFromNorth(pvtCoords, selectedCoords);
+    txtDisplay.innerText = `Cursor position [${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}] pivot angle: ${pvtAngle.toFixed(1)}° (target: ${targetAngle.toFixed(1)})`;
+  }
 }
 
 fetch('api/status', { method: 'GET' })
@@ -104,6 +127,17 @@ function updateServerMarker() {
       mrkServer = L.circle(svrCoords, { radius: 5, color: 'red' }).addTo(map);
     }
   }
+
+  if (pvtTxtInfo) {
+    pvtTxtInfo.setLatLng(svrCoords);
+    pvtTxtInfo.setContent(pvtAngle.toFixed(1));
+    pvtTxtInfo.openOn(map);
+  }
+  else if (flagAutopilot) {
+    pvtTxtInfo = L.popup(svrCoords, {closeButton: false, autoClose: false, closeOnEscapeKey: false})
+    .setContent(pvtAngle.toFixed(1))
+    .openOn(map);
+  }
 }
 
 socket.on('gpsData', (msg) => {
@@ -121,7 +155,18 @@ map.on('click', function (e) {
   else {
     mrkUser = L.marker(e.latlng).addTo(map);
   }
-  document.getElementById('coords').innerText = `${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}`;
+
+  if (flagAutopilot) {
+    updateAngleDisplay();
+  }
+  else {
+    txtDisplay.innerText = `Cursor pos [${selectedCoords[0].toFixed(6)}, ${selectedCoords[1].toFixed(6)}]`;
+    if (pvtTxtInfo) {
+      curTxtInfo.close();
+      curTxtInfo = null;
+    }
+  }
+  
   fetch('/api/update-coordinates', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -240,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
          const res = await fetch('/api/update-pivot', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ center: pvtCoords, rad: pvtRadius, speed: 1})
+            body: JSON.stringify({ center: pvtCoords, rad: pvtRadius, speed: 0})
         });
         const data = await res.json();
         if (data.pvtUpdate == false)
@@ -255,6 +300,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (document.getElementById('autopilot').checked) {
         console.log('Autopilot ON');
         socket.emit('do', {autopilot: true});
+        intervalId = setInterval(updateAngleDisplay, 1000);
         flagAutopilot = true;
         if (map.hasLayer(mrkServer)) {
           mrkServer.remove();
@@ -265,6 +311,13 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Autopilot OFF');
         socket.emit('do', {autopilot: false});
         flagAutopilot = false;
+        clearInterval(intervalId);
+        intervalId = null;
+        if (map.hasLayer(pvtTxtInfo))
+        {
+          pvtTxtInfo.close();
+          pvtTxtInfo = null;
+        }
         if (map.hasLayer(pvtBar)) {
           map.removeLayer(pvtBar);
           pvtBar = null;
